@@ -1,6 +1,6 @@
 # Compli MVP
 
-This is the Minimum Viable Product (MVP) for Compli, a secure, British-English, Australia-first legal compliance assistant for small businesses.
+This is the Minimum Viable Product (MVP) for Compli, a secure, Australia-first legal compliance assistant for small businesses.
 
 ## Tech Stack
 
