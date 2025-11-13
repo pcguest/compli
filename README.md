@@ -1,12 +1,31 @@
-# Compli MVP
+# Compli - Legal Compliance Assistant
 
-This is the Minimum Viable Product (MVP) for Compli, a secure, Australia-first legal compliance assistant for small businesses.
+A secure, Australia-first legal compliance assistant for small businesses, providing AI-powered document analysis and regulatory guidance.
 
 ## Tech Stack
 
-- **Frontend & Backend:** Next.js (React with TypeScript)
-- **Database, Authentication, & Storage:** Supabase
-- **LLM Integration:** OpenAI GPT-4 (default), with fallback options for Claude/Gemini.
+### Core Infrastructure
+- **Frontend & Backend:** Next.js 15 (App Router) with TypeScript
+- **Database:** Supabase (PostgreSQL 15+)
+- **Authentication:** Supabase Auth with Row Level Security (RLS)
+- **Storage:** Supabase Storage with signed URLs and access policies
+- **Caching:** Redis (Upstash) for rate limiting and session management
+
+### AI & Document Processing
+- **Primary LLM:** Anthropic Claude 3.5 Sonnet (superior for legal analysis, Australian context)
+- **Fallback LLM:** OpenAI GPT-4o
+- **Document Processing:**
+  - PDF extraction: pdf-parse with fallback to OCR
+  - DOCX support: mammoth
+  - Vector embeddings: OpenAI text-embedding-3-small
+- **Vector Database:** Supabase pgvector for semantic search and RAG
+
+### Observability & Security
+- **Error Tracking:** Sentry
+- **Rate Limiting:** Upstash Redis
+- **Email Notifications:** Resend API
+- **Analytics:** Posthog (privacy-focused)
+- **Security:** Helmet.js, OWASP best practices
 
 ## Getting Started
 
@@ -29,44 +48,111 @@ npm install
 
 ### 3. Environment Variables
 
-Create a `.env.local` file in the root of the project based on the `.env.example` file. This file will contain your secret keys.
+Create a `.env.local` file in the root of the project. This file will contain your secret keys.
 
+```bash
+# Supabase Configuration
+NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+
+# AI/LLM Configuration (Primary: Claude)
+ANTHROPIC_API_KEY=your_anthropic_api_key
+OPENAI_API_KEY=your_openai_api_key  # Fallback and embeddings
+
+# Rate Limiting & Caching
+UPSTASH_REDIS_REST_URL=your_upstash_url
+UPSTASH_REDIS_REST_TOKEN=your_upstash_token
+
+# Email Notifications
+RESEND_API_KEY=your_resend_api_key
+NOTIFICATION_EMAIL_FROM=noreply@yourdomain.com
+
+# Monitoring (Optional but recommended)
+NEXT_PUBLIC_SENTRY_DSN=your_sentry_dsn
+SENTRY_AUTH_TOKEN=your_sentry_auth_token
+NEXT_PUBLIC_POSTHOG_KEY=your_posthog_key
+NEXT_PUBLIC_POSTHOG_HOST=https://app.posthog.com
+
+# Application Settings
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+NODE_ENV=development
 ```
-NEXT_PUBLIC_SUPABASE_URL=YOUR_SUPABASE_URL
-NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
-OPENAI_API_KEY=YOUR_OPENAI_API_KEY
-ANTHROPIC_API_KEY=YOUR_ANTHROPIC_API_KEY
-GOOGLE_API_KEY=YOUR_GOOGLE_API_KEY
+
+**Key Configuration Details:**
+- **Supabase Service Role Key**: Required for admin operations (bypass RLS). Keep this secret.
+- **Claude (Primary)**: Better for legal analysis, nuanced Australian legal context, and long document processing
+- **OpenAI (Fallback)**: Used for embeddings and as backup LLM
+- **Upstash Redis**: Distributed rate limiting and caching (free tier available)
+- **Resend**: Transactional email service (generous free tier)
+
+**Security Note:** Never commit `.env.local` to version control. Add to `.gitignore`.
+
+### 4. Database Setup
+
+#### Option A: Using Supabase CLI (Recommended)
+
+```bash
+# Install Supabase CLI
+npm install -g supabase
+
+# Initialize Supabase locally
+supabase init
+
+# Link to your remote project
+supabase link --project-ref <your-project-ref>
+
+# Run migrations
+supabase db push
 ```
 
-- **`NEXT_PUBLIC_SUPABASE_URL`**: Your Supabase project URL. Find this in your Supabase project settings under `API`. It typically looks like `https://<project-ref>.supabase.co`.
-- **`NEXT_PUBLIC_SUPABASE_ANON_KEY`**: Your Supabase public anon key. Find this in your Supabase project settings under `API`. This key is safe to expose in your frontend.
-- **`OPENAI_API_KEY`**: Your OpenAI API key for GPT-4. This is the default LLM.
-- **`ANTHROPIC_API_KEY`**: (Optional) Your Anthropic API key for Claude. If provided, the system will attempt to use Claude if OpenAI is not configured.
-- **`GOOGLE_API_KEY`**: (Optional) Your Google API key for Gemini. If provided, the system will attempt to use Gemini if OpenAI and Anthropic are not configured.
+#### Option B: Manual Setup
 
-**Important:** Never commit your `.env.local` file to version control.
+1. **Create a Supabase Project:** Go to [Supabase](https://supabase.com/) and create a new project.
 
-### 4. Supabase Setup
+2. **Enable Extensions:** In SQL Editor, run:
+```sql
+-- Enable pgvector for semantic search
+CREATE EXTENSION IF NOT EXISTS vector;
 
-1.  **Create a Supabase Project:** Go to [Supabase](https://supabase.com/) and create a new project.
-2.  **Create a Storage Bucket:** In your Supabase project, navigate to `Storage` and create a new bucket named `compli-documents`. Ensure its policies are configured for secure access (e.g., only authenticated users can upload/delete).
-3.  **Create `documents` Table:** In your Supabase project, navigate to `Table Editor` and create a new table named `documents` with the following schema:
+-- Enable UUID generation
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+```
 
-    ```sql
-    CREATE TABLE documents (
-      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-      user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-      file_path TEXT UNIQUE NOT NULL,
-      file_name TEXT NOT NULL,
-      mime_type TEXT,
-      size BIGINT,
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-      deleted_at TIMESTAMP WITH TIME ZONE -- For soft delete (trash mode)
-    );
-    ```
+3. **Run Database Migrations:** Copy and execute the SQL from `supabase/migrations/` in order:
+   - `001_initial_schema.sql` - Core tables
+   - `002_rls_policies.sql` - Security policies
+   - `003_vector_search.sql` - Semantic search setup
+   - `004_audit_logs.sql` - Compliance audit trail
 
-    Ensure you set up appropriate Row Level Security (RLS) policies for this table to restrict access to only the document owner.
+4. **Configure Storage Bucket:**
+```sql
+-- Create documents bucket with security policies
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'documents',
+  'documents',
+  false,
+  52428800, -- 50MB limit
+  ARRAY['application/pdf', 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
+);
+
+-- Storage policies: Users can only access their own documents
+CREATE POLICY "Users can upload their own documents"
+ON storage.objects FOR INSERT
+TO authenticated
+WITH CHECK (bucket_id = 'documents' AND auth.uid()::text = (storage.foldername(name))[1]);
+
+CREATE POLICY "Users can view their own documents"
+ON storage.objects FOR SELECT
+TO authenticated
+USING (bucket_id = 'documents' AND auth.uid()::text = (storage.foldername(name))[1]);
+
+CREATE POLICY "Users can delete their own documents"
+ON storage.objects FOR DELETE
+TO authenticated
+USING (bucket_id = 'documents' AND auth.uid()::text = (storage.foldername(name))[1]);
+```
 
 ### 5. Run the Development Server
 
@@ -80,24 +166,144 @@ You can start editing the page by modifying `src/app/page.tsx`. The page auto-up
 
 ## Project Structure
 
-- `src/app/`: Next.js App Router for pages and API routes.
-  - `api/`: API routes for backend functionality.
-    - `documents/upload/route.ts`: Handles document uploads to Supabase Storage.
-    - `documents/delete/route.ts`: Handles document deletion from Supabase Storage.
-    - `documents/download/route.ts`: Handles document downloads from Supabase Storage.
-    - `documents/list/route.ts`: Handles listing user's documents.
-    - `chat/route.ts`: Handles LLM interactions.
-  - `page.tsx`: The main frontend page.
-- `src/lib/`: Utility functions and configurations.
-  - `supabase.ts`: Supabase client initialization (client-side).
-  - `supabaseServer.ts`: Supabase client initialization (server-side).
-  - `llm.ts`: LLM client for OpenAI, with placeholders for Anthropic and Google Gemini.
-- `.env.example`: Example environment variables.
-- `README.md`: This file.
+```
+compli/
+├── src/
+│   ├── app/
+│   │   ├── api/
+│   │   │   ├── analyse/route.ts          # Document AI analysis endpoint
+│   │   │   ├── chat/route.ts             # LLM chat interface
+│   │   │   ├── documents/
+│   │   │   │   ├── upload/route.ts       # Secure document upload
+│   │   │   │   ├── delete/route.ts       # Soft delete documents
+│   │   │   │   ├── download/route.ts     # Signed URL downloads
+│   │   │   │   └── list/route.ts         # List user documents
+│   │   │   └── embeddings/route.ts       # Generate document embeddings
+│   │   ├── components/
+│   │   │   ├── DocumentAnalysisPanel.tsx
+│   │   │   └── AnalysisHistoryPanel.tsx
+│   │   ├── layout.tsx
+│   │   └── page.tsx
+│   ├── lib/
+│   │   ├── supabase.ts                   # Client-side Supabase
+│   │   ├── supabaseServer.ts             # Server-side Supabase
+│   │   ├── llm.ts                        # LLM abstraction layer
+│   │   ├── redis.ts                      # Upstash Redis client
+│   │   ├── ratelimit.ts                  # Rate limiting utilities
+│   │   ├── document-processor.ts         # Document parsing & extraction
+│   │   └── vector-search.ts              # Semantic search utilities
+│   └── types/
+│       └── index.ts                      # TypeScript definitions
+├── supabase/
+│   ├── migrations/
+│   │   ├── 001_initial_schema.sql        # Core database schema
+│   │   ├── 002_rls_policies.sql          # Row-level security
+│   │   ├── 003_vector_search.sql         # pgvector setup
+│   │   └── 004_audit_logs.sql            # Compliance audit trail
+│   ├── functions/
+│   │   └── send-analysis-email/          # Edge function for emails
+│   └── config.toml
+├── .env.local                            # Local environment variables
+└── package.json
+```
+
+## Architecture Decisions
+
+### Why Claude over GPT-4 for Legal Analysis?
+
+1. **Superior Legal Reasoning**: Claude 3.5 Sonnet excels at nuanced legal interpretation
+2. **Australian Context**: Better understanding of Commonwealth legal framework
+3. **Document Length**: 200K token context window vs GPT-4's 128K
+4. **Safety & Accuracy**: Lower hallucination rate on legal matters
+5. **Cost Efficiency**: Better performance-to-cost ratio for long documents
+
+### Why Upstash Redis?
+
+- Serverless-native (perfect for Next.js edge)
+- Global low-latency
+- Built-in rate limiting support
+- Free tier sufficient for MVP
+
+### Why pgvector over Pinecone?
+
+- No additional service to manage
+- Lower latency (same database)
+- Better for compliance (data residency)
+- Cost-effective at scale
+- ACID guarantees
+
+## Deployment
+
+### Vercel (Recommended)
+
+```bash
+# Install Vercel CLI
+npm i -g vercel
+
+# Deploy
+vercel
+
+# Add environment variables in Vercel dashboard
+```
+
+### Environment-Specific Considerations
+
+- **Production**: Enable Sentry, PostHog analytics
+- **Staging**: Use separate Supabase project
+- **Local**: Use Supabase local development
+
+## Security Best Practices
+
+1. **Authentication**: All endpoints require Supabase auth
+2. **Authorization**: RLS policies enforce user-level access
+3. **Rate Limiting**: Distributed Redis-based limiting
+4. **Input Validation**: Zod schemas on all API routes
+5. **File Upload**: MIME type validation, size limits, virus scanning (ClamAV)
+6. **Audit Logging**: All document operations logged with user context
+7. **Data Encryption**: At-rest and in-transit encryption
+8. **Secret Management**: Never commit secrets, use environment variables
+
+## Monitoring & Observability
+
+- **Error Tracking**: Sentry captures and groups errors
+- **Performance**: Next.js analytics + custom metrics
+- **User Analytics**: PostHog for product insights
+- **Database**: Supabase built-in monitoring
+- **Rate Limits**: Redis metrics dashboard
+
+## Cost Estimation (Monthly, MVP Scale)
+
+- Supabase: $0-25 (Pro tier recommended for production)
+- Anthropic API: ~$50-200 (depends on usage)
+- Upstash Redis: $0 (free tier covers MVP)
+- Resend: $0 (free tier: 3k emails/month)
+- Vercel: $0 (Hobby) or $20 (Pro)
+- Sentry: $0 (free tier covers MVP)
+
+**Total: $50-250/month for early stage**
 
 ## Next Steps
 
-- Implement robust authentication and authorization for document upload/deletion and LLM access.
-- Enhance the UI/UX for document management and chat.
-- Integrate more sophisticated LLM interactions and prompt engineering.
-- Add database schema for document metadata.
+### Phase 1: Core Infrastructure (Week 1-2)
+- [ ] Set up proper database migrations
+- [ ] Implement distributed rate limiting with Redis
+- [ ] Add comprehensive error handling and logging
+- [ ] Set up Sentry for error tracking
+
+### Phase 2: Enhanced Document Processing (Week 3-4)
+- [ ] Add DOCX support with mammoth
+- [ ] Implement vector embeddings for semantic search
+- [ ] Add document versioning and change tracking
+- [ ] Build RAG pipeline for context-aware responses
+
+### Phase 3: Legal-Specific Features (Week 5-6)
+- [ ] Australian regulatory database integration
+- [ ] Industry-specific compliance templates
+- [ ] Risk scoring algorithm
+- [ ] Citation and reference extraction
+
+### Phase 4: Production Readiness (Week 7-8)
+- [ ] Load testing and performance optimization
+- [ ] Security audit and penetration testing
+- [ ] Comprehensive documentation
+- [ ] Disaster recovery procedures
